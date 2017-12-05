@@ -7,13 +7,6 @@ var cheerio = require("cheerio");
 var request = require('request');
 var logger = require("morgan");
 
-// Request ===========================================================================
-// request('http://www.google.com', function (error, response, body) {
-//   console.log('error:', error); // Print the error if one occurred
-//   console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
-//   console.log('body:', body); // Print the HTML for the Google homepage.
-// }); =================================================================================
-
 // Require all models
 var db = require("./models");
 
@@ -26,7 +19,7 @@ var app = express();
 app.engine('handlebars', exphbs({defaultLayout: 'main'}));
 app.set('view engine', 'handlebars');
 
-// Configure middleware
+// Configure middleware =================================================================
 
 // Use morgan logger for logging requests
 app.use(logger("dev"));
@@ -38,46 +31,70 @@ app.use(express.static("public"));
 // Set mongoose to leverage built in JavaScript ES6 Promises
 // Connect to the Mongo DB
 mongoose.Promise = Promise;
-mongoose.connect("mongodb://localhost/week18Populater", {
+mongoose.connect("mongodb://localhost/mongoscraper2", {
   useMongoClient: true
 });
 
-// Routes
+// Routes ================================================================================
 
-// A GET route for scraping the echojs website
+// A GET route for scraping the cnet.com website
 app.get("/scrape", function(req, res) {
-  // First, we grab the body of the html with request
-  axios.get("http://www.echojs.com/").then(function(response) {
-    // Then, we load that into cheerio and save it to $ for a shorthand selector
-    var $ = cheerio.load(response.data);
 
-    // Now, we grab every h2 within an article tag, and do the following:
-    $("article h2").each(function(i, element) {
+  // Grab the body of the html with request
+  request("https://www.cnet.com/", function(error, response, html) {
+
+    // Load html body into cheerio and save it to $ for a shorthand selector
+    var $ = cheerio.load(html);
+
+    var results = [];
+
+    // Grab the latest news and search for items div
+    $(".latestScrollItems .item").each(function(i, element) {
+
       // Save an empty result object
       var result = {};
 
       // Add the text and href of every link, and save them as properties of the result object
       result.title = $(this)
         .children("a")
+        .children("div")
+        .children("h3")
         .text();
-      result.link = $(this)
+      result.body = $(this)
+        .children("a")
+        .children("div")
+        .children("p")
+        .text();
+      result.img = $(this)
+        .children("a")
+        .children("figure")
+        .children("span")
+        .children("img")
+        .attr("src");
+      result.link = 
+        "https://www.cnet.com" + $(this)
         .children("a")
         .attr("href");
 
+        console.log(result);
+        results.push(result);
+        console.log(results);
+
       // Create a new Article using the `result` object built from scraping
       db.Article
-        .create(result)
-        .then(function(dbArticle) {
-          // If we were able to successfully scrape and save an Article, send a message to the client
-          res.send("Scrape Complete");
-        })
-        .catch(function(err) {
-          // If an error occurred, send it to the client
-          res.json(err);
-        });
+      .create(results)
+      .then(function(dbArticles) {
+        // If we were able to successfully scrape and save an Article, send a message to the client
+        res.send(dbArticles);
+      })
+      .catch(function(err) {
+        // If an error occurred, send it to the client
+        res.json(err);
+      });
     });
   });
 });
+
 
 // Route for getting all Articles from the db
 app.get("/articles", function(req, res) {
